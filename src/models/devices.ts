@@ -1,10 +1,10 @@
-import { ActionType, PeripheralType, IObserver, MemoryType } from '../types';
-import { Processor, Memory, Peripheral } from './hardware';
-import { PowerSource, Battery, UPS } from './power';
-import { Software } from './software';
-import { Environment } from '../environment';
+import {ActionType, PeripheralType, MemoryType, ExecutionResult} from '../types';
+import {Processor, Memory, Peripheral} from './hardware';
+import {PowerSource, Battery, UPS} from './power';
+import {Software} from './software';
+import {EnvironmentChangedEventArgs} from '../events/EnvironmentEvents';
 
-export abstract class Device implements IObserver {
+export abstract class Device {
     protected softwareList: Software[] = [];
     protected peripherals: Peripheral[] = [];
     protected hasNetwork: boolean = true;
@@ -17,61 +17,84 @@ export abstract class Device implements IObserver {
         protected powerSource: PowerSource,
         public readonly isMobile: boolean = false
     ) {
-        Environment.getInstance().subscribe(this);
-        this.hasNetwork = Environment.getInstance().getNetworkStatus();
-        this.powerSource.setGridPower(Environment.getInstance().getPowerStatus());
     }
 
-    updateEnvironment(p: boolean, n: boolean) {
-        this.hasNetwork = n;
-        this.powerSource.setGridPower(p);
+    public onEnvironmentChanged = (args: EnvironmentChangedEventArgs): void => {
+        this.hasNetwork = args.hasNetwork;
+        this.powerSource.setGridPower(args.hasPower);
     }
 
-    connectPeripheral(p: Peripheral) { this.peripherals.push(p); }
+    connectPeripheral(p: Peripheral) {
+        this.peripherals.push(p);
+    }
 
-    installSoftware(sw: Software): { success: boolean, reason?: string } {
-        if (this.softwareList.some(s => s.name === sw.name)) return { success: false, reason: "Програма вже встановлена." };
-
-        if (this.isMobile && !sw.isMobileCompatible) {
-            return { success: false, reason: `Програма "${sw.name}" не підтримується на мобільних пристроях.` };
-        }
+    installSoftware(sw: Software): ExecutionResult {
+        if (this.softwareList.some(s => s.name === sw.name)) return {
+            success: false,
+            reason: "Програма вже встановлена."
+        };
+        if (this.isMobile && !sw.isMobileCompatible) return {
+            success: false,
+            reason: `Програма "${sw.name}" не підтримується на мобільних пристроях.`
+        };
 
         if (this.storage.allocate(sw.requiredStorageGB)) {
             this.softwareList.push(sw);
-            return { success: true };
+            return {success: true};
         }
-        return { success: false, reason: "Недостатньо місця на SSD." };
+        return {success: false, reason: "Недостатньо місця на накопичувачі."};
     }
 
     isInstalled(action: ActionType): boolean {
         return this.softwareList.some(s => s.actionType === action);
     }
 
-    executeAction(action: ActionType, hours: number): { success: boolean, reason?: string } {
+    executeAction(action: ActionType, hours: number): ExecutionResult {
         const sw = this.softwareList.find(s => s.actionType === action);
-        if (!sw) return { success: false, reason: "ПЗ не встановлено. Зайдіть у 'Центр завантажень', щоб встановити." };
+        if (!sw) return {success: false, reason: "ПЗ не встановлено. Зайдіть у 'Центр завантажень', щоб встановити."};
 
-        if (sw.requiresNetwork && !this.hasNetwork) return { success: false, reason: "Відсутній інтернет (необхідно для цієї дії)." };
-        if (this.ram.getFreeGB() < sw.requiredRamGB) return { success: false, reason: "Недостатньо оперативної пам'яті." };
+        if (sw.requiresNetwork && !this.hasNetwork) return {
+            success: false,
+            reason: "Відсутній інтернет (необхідно для цієї дії)."
+        };
+        if (this.ram.getFreeGB() < sw.requiredRamGB) return {
+            success: false,
+            reason: "Недостатньо оперативної пам'яті."
+        };
 
         const hasDisplay = this.peripherals.some(p => p.type === PeripheralType.Display);
         const hasAudioOut = this.peripherals.some(p => p.type === PeripheralType.AudioOutput);
         const hasAudioIn = this.peripherals.some(p => p.type === PeripheralType.AudioInput);
         const hasInput = this.peripherals.some(p => p.type === PeripheralType.InputDevice);
 
-        if ((action === ActionType.Play || action === ActionType.WatchVideo) && !hasDisplay) return { success: false, reason: "Потрібен монітор/екран." };
-        if ((action === ActionType.ListenMusic || action === ActionType.WatchVideo || action === ActionType.Play) && !hasAudioOut) return { success: false, reason: "Відсутні динаміки/навушники." };
-        if (action === ActionType.Communicate && (!hasAudioOut || !hasAudioIn)) return { success: false, reason: "Потрібен мікрофон та динаміки для спілкування." };
-        if ((action === ActionType.Work || action === ActionType.Play) && !hasInput) return { success: false, reason: "Відсутній пристрій вводу (клавіатура/миша/сенсор)." };
+        if ((action === ActionType.Play || action === ActionType.WatchVideo) && !hasDisplay) return {
+            success: false,
+            reason: "Потрібен монітор/екран."
+        };
+        if ((action === ActionType.ListenMusic || action === ActionType.WatchVideo || action === ActionType.Play) && !hasAudioOut) return {
+            success: false,
+            reason: "Відсутні динаміки/навушники."
+        };
+        if (action === ActionType.Communicate && (!hasAudioOut || !hasAudioIn)) return {
+            success: false,
+            reason: "Потрібен мікрофон та динаміки для спілкування."
+        };
+        if ((action === ActionType.Work || action === ActionType.Play) && !hasInput) return {
+            success: false,
+            reason: "Відсутній пристрій вводу (клавіатура/миша/сенсор)."
+        };
 
         const isHeavy = action === ActionType.Play || action === ActionType.WatchVideo;
-        if (!this.powerSource.consume(hours, isHeavy)) return { success: false, reason: "Пристрій вимкнувся: недостатньо заряду." };
+        if (!this.powerSource.consume(hours, isHeavy)) return {
+            success: false,
+            reason: "Пристрій вимкнувся: недостатньо заряду."
+        };
 
-        return { success: true };
+        return {success: true};
     }
 
     getSystemInfo(): string {
-        return `ЦП: ${this.cpu.name} | RAM: ${this.ram.getFreeGB()}ГБ | SSD: ${this.storage.getFreeGB()}ГБ | Заряд: ${this.powerSource.getChargeLevel().toFixed(1)}%`;
+        return `ЦП: ${this.cpu.name} | RAM: ${this.ram.getFreeGB()}ГБ | SSD: ${this.storage.getFreeGB()}ГБ | Заряд/ДБЖ: ${this.powerSource.getChargeLevel().toFixed(1)}%`;
     }
 }
 

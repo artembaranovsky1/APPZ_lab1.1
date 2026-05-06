@@ -15,6 +15,14 @@ export class CLI {
     constructor() {
         const preInstalledApps = [catalog.spotify, catalog.youtube];
         Object.values(this.devices).forEach(device => {
+
+            this.env.subscribe(device.onEnvironmentChanged);
+
+            device.onEnvironmentChanged({
+                hasPower: this.env.getPowerStatus(),
+                hasNetwork: this.env.getNetworkStatus()
+            });
+
             preInstalledApps.forEach(app => device.installSoftware(app));
         });
     }
@@ -57,7 +65,7 @@ export class CLI {
             }
 
             if (res) {
-                if (res.success) console.log("\n[+] Успішно встановлено! Місце на SSD оновлено.");
+                if (res.success) console.log("\n[+] Успішно встановлено! Місце на диску оновлено.");
                 else console.log(`\n[-] Неможливо встановити: ${res.reason}`);
             }
             this.downloadMenu();

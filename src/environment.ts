@@ -1,10 +1,11 @@
-import { IObserver } from './types';
+import { EnvironmentChangedEventArgs, EnvironmentEventHandler } from './events/EnvironmentEvents';
 
 export class Environment {
     private static instance: Environment;
     private powerGrid: boolean = true;
     private network: boolean = true;
-    private observers: IObserver[] = [];
+
+    private handlers: EnvironmentEventHandler[] = [];
 
     private constructor() {}
 
@@ -12,13 +13,30 @@ export class Environment {
         return this.instance || (this.instance = new Environment());
     }
 
-    subscribe(obs: IObserver) { this.observers.push(obs); }
-    setPower(s: boolean) { this.powerGrid = s; this.notify(); }
-    setNetwork(s: boolean) { this.network = s; this.notify(); }
+    subscribe(handler: EnvironmentEventHandler) {
+        this.handlers.push(handler);
+    }
+
+    unsubscribe(handler: EnvironmentEventHandler) {
+        this.handlers = this.handlers.filter(h => h !== handler);
+    }
+
+    setPower(status: boolean) {
+        this.powerGrid = status;
+        this.notify();
+    }
+
+    setNetwork(status: boolean) {
+        this.network = status;
+        this.notify();
+    }
+
     getPowerStatus() { return this.powerGrid; }
     getNetworkStatus() { return this.network; }
 
+
     private notify() {
-        this.observers.forEach(o => o.updateEnvironment(this.powerGrid, this.network));
+        const args = new EnvironmentChangedEventArgs(this.powerGrid, this.network);
+        this.handlers.forEach(h => h(args));
     }
 }
